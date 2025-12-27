@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Alain Vagner", email = "pypi@sous-anneau.org"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -47,8 +47,8 @@ dev = [
 udata-dl = "udata_dl.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/udata-dl"
-Repository = "https://github.com/yourusername/udata-dl"
+Homepage = "https://github.com/opendatalu/udata-dl"
+Repository = "https://github.com/opendatalu/udata-dl"
 
 [tool.hatch.build.targets.wheel]
 packages = ["udata_dl"]
