@@ -33,7 +33,7 @@ class UdataDownloader:
         self.console = console or Console()
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'udata-dl/0.2.0'
+            'User-Agent': 'udata-dl/0.3.0'
         })
 
     def get_organization(self, organization: str) -> Optional[Dict]:
@@ -288,7 +288,10 @@ class UdataDownloader:
             return
 
         # Count total resources
-        total_resources = sum(len(ds.get("resources", [])) for ds in datasets)
+        total_resources = 0
+        for dataset in datasets:
+            resources = [r for r in dataset.get("resources", []) if r.get("type") != "api"]
+            total_resources += len(resources)
         self.console.print(f"[cyan]Total resources to process: {total_resources}[/cyan]\n")
 
         if dry_run:
@@ -305,7 +308,9 @@ class UdataDownloader:
         for dataset in datasets:
             dataset_slug = dataset.get("slug", "unknown")
             dataset_title = dataset.get("title", "Unknown Dataset")
-            resources = dataset.get("resources", [])
+
+            # exclude APIs
+            resources = [r for r in dataset.get("resources", []) if r.get("type") != "api"]
 
             if not resources:
                 continue
@@ -437,7 +442,9 @@ class UdataDownloader:
 
         dataset_slug = dataset_data.get("slug", "unknown")
         dataset_title = dataset_data.get("title", "Unknown Dataset")
-        resources = dataset_data.get("resources", [])
+
+        # exclude APIs
+        resources = [r for r in dataset_data.get("resources", []) if r.get("type") != "api"]
 
         # Extract organization from dataset
         org_data = dataset_data.get("organization")

@@ -16,6 +16,7 @@ A CLI tool to download and synchronize files from udata platforms (data.public.l
 - Dry-run mode to preview downloads
 - Progress tracking with rich console output
 - No authentication required
+- API endpoints which can be referenced from some datasets are excluded from download.
 
 ## Installation
 
