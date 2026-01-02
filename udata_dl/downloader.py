@@ -39,13 +39,13 @@ class UdataDownloader:
         # Open log file if specified
         if log_file:
             try:
-                self.log_file_handle = open(log_file, 'w', encoding='utf-8')
+                self.log_file_handle = open(log_file, 'a', encoding='utf-8')
             except Exception as e:
                 self.print(f"[red]Warning: Could not open log file {log_file}: {e}[/red]")
 
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'udata-dl/0.4.0'
+            'User-Agent': 'udata-dl/0.4.1'
         })
 
     def __del__(self):
