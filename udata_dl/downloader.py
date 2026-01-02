@@ -45,7 +45,7 @@ class UdataDownloader:
 
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'udata-dl/0.3.0'
+            'User-Agent': 'udata-dl/0.4.0'
         })
 
     def __del__(self):
