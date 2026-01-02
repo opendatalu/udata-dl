@@ -65,8 +65,13 @@ def build_api_url(domain: str) -> str:
     is_flag=True,
     help='Show what would be downloaded without actually downloading'
 )
+@click.option(
+    '--log-file', '-l',
+    type=click.Path(),
+    help='Save logs to a file'
+)
 @click.version_option()
-def main(organization: str, output: str, api_url: str, dataset: str, force: bool, dry_run: bool):
+def main(organization: str, output: str, api_url: str, dataset: str, force: bool, dry_run: bool, log_file: str):
     """
     Download and sync files from a udata platform for a given organization or dataset.
 
@@ -128,7 +133,8 @@ def main(organization: str, output: str, api_url: str, dataset: str, force: bool
         downloader = UdataDownloader(
             output_dir=output,
             api_base_url=api_base_url,
-            console=console
+            console=console,
+            log_file=log_file
         )
 
         if dataset:

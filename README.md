@@ -75,6 +75,7 @@ udata-dl [OPTIONS] [ORGANIZATION]
 - `-u, --api-url URL`: Base URL of the udata API (default: `https://data.public.lu/api/1`)
 - `-f, --force`: Force download even if files already exist
 - `-n, --dry-run`: Show what would be downloaded without actually downloading
+- `-l, --log-file PATH`: Save logs to a file
 - `--version`: Show version and exit
 - `--help`: Show help message and exit
 
@@ -120,6 +121,11 @@ udata-dl societe-nationale-des-chemins-de-fer-luxembourgeois --dry-run
 Download a single dataset in dry-run mode:
 ```bash
 udata-dl --dataset my-dataset-slug --dry-run
+```
+
+Save logs to a file:
+```bash
+udata-dl societe-nationale-des-chemins-de-fer-luxembourgeois --log-file download.log
 ```
 
 ### Synchronization

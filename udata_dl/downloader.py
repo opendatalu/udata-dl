@@ -2,8 +2,9 @@
 
 import os
 import hashlib
+import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TextIO
 from urllib.parse import urlparse
 
 import requests
@@ -18,7 +19,8 @@ class UdataDownloader:
         self,
         output_dir: str = ".",
         api_base_url: str = "https://data.public.lu/api/1",
-        console: Optional[Console] = None
+        console: Optional[Console] = None,
+        log_file: Optional[str] = None
     ):
         """
         Initialize downloader.
@@ -27,14 +29,61 @@ class UdataDownloader:
             output_dir: Base directory for downloaded files
             api_base_url: Base URL for the udata API (default: data.public.lu)
             console: Rich console for output
+            log_file: Optional path to save logs to a file
         """
         self.output_dir = Path(output_dir)
         self.api_base_url = api_base_url.rstrip('/')  # Remove trailing slash
         self.console = console or Console()
+        self.log_file_handle: Optional[TextIO] = None
+
+        # Open log file if specified
+        if log_file:
+            try:
+                self.log_file_handle = open(log_file, 'w', encoding='utf-8')
+            except Exception as e:
+                self.print(f"[red]Warning: Could not open log file {log_file}: {e}[/red]")
+
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'udata-dl/0.3.0'
         })
+
+    def __del__(self):
+        """Close log file handle if open"""
+        if self.log_file_handle:
+            try:
+                self.log_file_handle.close()
+            except:
+                pass
+
+    def _strip_markup(self, text: str) -> str:
+        """
+        Remove Rich markup tags from text for plain log file output.
+
+        Args:
+            text: Text with Rich markup
+
+        Returns:
+            Plain text without markup
+        """
+        # Remove Rich markup tags like [bold], [red], etc.
+        return re.sub(r'\[/?[^\]]+\]', '', text)
+
+    def print(self, text: str = ""):
+        """
+        Print to console and optionally to log file.
+
+        Args:
+            text: Text to print (can include Rich markup)
+        """
+        # Print to console with formatting
+        self.console.print(text)
+
+        # Write to log file if enabled (strip formatting)
+        if self.log_file_handle:
+            plain_text = self._strip_markup(text)
+            self.log_file_handle.write(plain_text + '\n')
+            self.log_file_handle.flush()
 
     def get_organization(self, organization: str) -> Optional[Dict]:
         """
@@ -54,7 +103,7 @@ class UdataDownloader:
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
-            self.console.print(f"[red]Error fetching organization details: {e}[/red]")
+            self.print(f"[red]Error fetching organization details: {e}[/red]")
             return None
 
     def get_dataset(self, dataset: str) -> Optional[Dict]:
@@ -75,7 +124,7 @@ class UdataDownloader:
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
-            self.console.print(f"[red]Error fetching dataset: {e}[/red]")
+            self.print(f"[red]Error fetching dataset: {e}[/red]")
             return None
 
     def get_datasets(self, organization: str) -> List[Dict]:
@@ -91,7 +140,7 @@ class UdataDownloader:
         datasets = []
         page = 1
 
-        self.console.print(f"[cyan]Fetching datasets for organization: {organization}[/cyan]")
+        self.print(f"[cyan]Fetching datasets for organization: {organization}[/cyan]")
 
         while True:
             try:
@@ -111,7 +160,7 @@ class UdataDownloader:
                     break
 
                 datasets.extend(page_datasets)
-                self.console.print(f"[dim]  Found {len(datasets)} datasets so far...[/dim]")
+                self.print(f"[dim]  Found {len(datasets)} datasets so far...[/dim]")
 
                 # Check if there are more pages
                 if not data.get("next_page"):
@@ -120,10 +169,10 @@ class UdataDownloader:
                 page += 1
 
             except requests.RequestException as e:
-                self.console.print(f"[red]Error fetching datasets: {e}[/red]")
+                self.print(f"[red]Error fetching datasets: {e}[/red]")
                 break
 
-        self.console.print(f"[green]Total datasets found: {len(datasets)}[/green]")
+        self.print(f"[green]Total datasets found: {len(datasets)}[/green]")
         return datasets
 
     def get_file_hash(self, filepath: Path, algorithm: str = "sha1") -> Optional[str]:
@@ -262,29 +311,29 @@ class UdataDownloader:
         # Get organization details to retrieve slug
         org_details = self.get_organization(organization)
         if not org_details:
-            self.console.print("[red]Could not fetch organization details[/red]")
+            self.print("[red]Could not fetch organization details[/red]")
             return
 
         org_slug = org_details.get("slug")
         org_id = org_details.get("id")
 
         if not org_slug:
-            self.console.print("[red]Organization slug not found in API response[/red]")
+            self.print("[red]Organization slug not found in API response[/red]")
             return
 
         if not org_id:
-            self.console.print("[red]Organization ID not found in API response[/red]")
+            self.print("[red]Organization ID not found in API response[/red]")
             return
 
         org_name = org_details.get("name", organization)
-        self.console.print(f"[bold]Organization:[/bold] {org_name}")
-        self.console.print(f"[dim]Slug: {org_slug}[/dim]\n")
+        self.print(f"[bold]Organization:[/bold] {org_name}")
+        self.print(f"[dim]Slug: {org_slug}[/dim]\n")
 
         # Use organization ID for datasets endpoint (it doesn't accept slugs)
         datasets = self.get_datasets(org_id)
 
         if not datasets:
-            self.console.print("[yellow]No datasets found for this organization[/yellow]")
+            self.print("[yellow]No datasets found for this organization[/yellow]")
             return
 
         # Count total resources
@@ -292,10 +341,10 @@ class UdataDownloader:
         for dataset in datasets:
             resources = [r for r in dataset.get("resources", []) if r.get("type") != "api"]
             total_resources += len(resources)
-        self.console.print(f"[cyan]Total resources to process: {total_resources}[/cyan]\n")
+        self.print(f"[cyan]Total resources to process: {total_resources}[/cyan]\n")
 
         if dry_run:
-            self.console.print("[yellow]DRY RUN MODE - No files will be downloaded[/yellow]\n")
+            self.print("[yellow]DRY RUN MODE - No files will be downloaded[/yellow]\n")
 
         downloaded = 0
         skipped = 0
@@ -315,9 +364,9 @@ class UdataDownloader:
             if not resources:
                 continue
 
-            self.console.print(f"\n[bold blue]Dataset:[/bold blue] {dataset_title}")
-            self.console.print(f"[dim]  Slug: {dataset_slug}[/dim]")
-            self.console.print(f"[dim]  Resources: {len(resources)}[/dim]")
+            self.print(f"\n[bold blue]Dataset:[/bold blue] {dataset_title}")
+            self.print(f"[dim]  Slug: {dataset_slug}[/dim]")
+            self.print(f"[dim]  Resources: {len(resources)}[/dim]")
 
             # Create dataset directory
             dataset_dir = self.output_dir / org_slug / dataset_slug
@@ -329,7 +378,7 @@ class UdataDownloader:
                 resource_checksum = resource.get("checksum")
 
                 if not resource_url:
-                    self.console.print(f"  [yellow]⚠ Skipping resource {i}: No URL[/yellow]")
+                    self.print(f"  [yellow]⚠ Skipping resource {i}: No URL[/yellow]")
                     skipped += 1
                     continue
 
@@ -352,7 +401,7 @@ class UdataDownloader:
                     if resource_checksum and resource_checksum.get("value"):
                         hash_type = resource_checksum.get("type", "sha1")
                         checksum_info = f" [dim]({hash_type})[/dim]"
-                    self.console.print(f"  [dim]Would download:[/dim] {filename}{checksum_info}")
+                    self.print(f"  [dim]Would download:[/dim] {filename}{checksum_info}")
                     continue
 
                 # Download the file with checksum verification
@@ -365,20 +414,20 @@ class UdataDownloader:
 
                 if success:
                     if "skipped" in message:
-                        self.console.print(f"  [dim]⊘ {filename} - {message}[/dim]")
+                        self.print(f"  [dim]⊘ {filename} - {message}[/dim]")
                         skipped += 1
                     else:
-                        self.console.print(f"  [green]✓ {filename} - {message}[/green]")
+                        self.print(f"  [green]✓ {filename} - {message}[/green]")
                         downloaded += 1
                 else:
-                    self.console.print(f"  [red]✗ {filename} - {message}[/red]")
+                    self.print(f"  [red]✗ {filename} - {message}[/red]")
                     errors += 1
 
         # Delete files that no longer exist in the API
         if not dry_run:
             org_dir = self.output_dir / org_slug
             if org_dir.exists():
-                self.console.print("\n[cyan]Checking for removed files...[/cyan]")
+                self.print("\n[cyan]Checking for removed files...[/cyan]")
 
                 # Find all files in the organization directory
                 existing_files = set()
@@ -390,35 +439,35 @@ class UdataDownloader:
                 orphaned_files = existing_files - expected_files
 
                 if orphaned_files:
-                    self.console.print(f"[yellow]Found {len(orphaned_files)} file(s) no longer in API[/yellow]")
+                    self.print(f"[yellow]Found {len(orphaned_files)} file(s) no longer in API[/yellow]")
                     for orphaned_file in sorted(orphaned_files):
                         try:
                             orphaned_file.unlink()
                             relative_path = orphaned_file.relative_to(self.output_dir)
-                            self.console.print(f"  [red]✗ Deleted: {relative_path}[/red]")
+                            self.print(f"  [red]✗ Deleted: {relative_path}[/red]")
                             deleted += 1
                         except Exception as e:
-                            self.console.print(f"  [red]Error deleting {orphaned_file.name}: {e}[/red]")
+                            self.print(f"  [red]Error deleting {orphaned_file.name}: {e}[/red]")
 
                     # Clean up empty directories
                     for dataset_dir in org_dir.iterdir():
                         if dataset_dir.is_dir() and not any(dataset_dir.iterdir()):
                             try:
                                 dataset_dir.rmdir()
-                                self.console.print(f"  [dim]Removed empty directory: {dataset_dir.name}[/dim]")
+                                self.print(f"  [dim]Removed empty directory: {dataset_dir.name}[/dim]")
                             except:
                                 pass
                 else:
-                    self.console.print("[dim]No orphaned files found[/dim]")
+                    self.print("[dim]No orphaned files found[/dim]")
 
         # Print summary
-        self.console.print("\n[bold]Summary:[/bold]")
-        self.console.print(f"  [green]Downloaded: {downloaded}[/green]")
-        self.console.print(f"  [dim]Skipped: {skipped}[/dim]")
+        self.print("\n[bold]Summary:[/bold]")
+        self.print(f"  [green]Downloaded: {downloaded}[/green]")
+        self.print(f"  [dim]Skipped: {skipped}[/dim]")
         if deleted > 0:
-            self.console.print(f"  [red]Deleted: {deleted}[/red]")
+            self.print(f"  [red]Deleted: {deleted}[/red]")
         if errors > 0:
-            self.console.print(f"  [red]Errors: {errors}[/red]")
+            self.print(f"  [red]Errors: {errors}[/red]")
 
     def sync_dataset(
         self,
@@ -437,7 +486,7 @@ class UdataDownloader:
         # Fetch the dataset
         dataset_data = self.get_dataset(dataset)
         if not dataset_data:
-            self.console.print("[red]Could not fetch dataset details[/red]")
+            self.print("[red]Could not fetch dataset details[/red]")
             return
 
         dataset_slug = dataset_data.get("slug", "unknown")
@@ -462,18 +511,18 @@ class UdataDownloader:
 
 
 
-        self.console.print(f"[bold]Organization:[/bold] {org_name}")
-        self.console.print(f"[dim]Slug: {org_slug}[/dim]")
-        self.console.print(f"[bold blue]Dataset:[/bold blue] {dataset_title}")
-        self.console.print(f"[dim]Slug: {dataset_slug}[/dim]")
-        self.console.print(f"[dim]Resources: {len(resources)}[/dim]\n")
+        self.print(f"[bold]Organization:[/bold] {org_name}")
+        self.print(f"[dim]Slug: {org_slug}[/dim]")
+        self.print(f"[bold blue]Dataset:[/bold blue] {dataset_title}")
+        self.print(f"[dim]Slug: {dataset_slug}[/dim]")
+        self.print(f"[dim]Resources: {len(resources)}[/dim]\n")
 
         if not resources:
-            self.console.print("[yellow]No resources found for this dataset[/yellow]")
+            self.print("[yellow]No resources found for this dataset[/yellow]")
             return
 
         if dry_run:
-            self.console.print("[yellow]DRY RUN MODE - No files will be downloaded[/yellow]\n")
+            self.print("[yellow]DRY RUN MODE - No files will be downloaded[/yellow]\n")
 
         downloaded = 0
         skipped = 0
@@ -493,7 +542,7 @@ class UdataDownloader:
             resource_checksum = resource.get("checksum")
 
             if not resource_url:
-                self.console.print(f"  [yellow]⚠ Skipping resource {i}: No URL[/yellow]")
+                self.print(f"  [yellow]⚠ Skipping resource {i}: No URL[/yellow]")
                 skipped += 1
                 continue
 
@@ -516,7 +565,7 @@ class UdataDownloader:
                 if resource_checksum and resource_checksum.get("value"):
                     hash_type = resource_checksum.get("type", "sha1")
                     checksum_info = f" [dim]({hash_type})[/dim]"
-                self.console.print(f"  [dim]Would download:[/dim] {filename}{checksum_info}")
+                self.print(f"  [dim]Would download:[/dim] {filename}{checksum_info}")
                 continue
 
             # Download the file with checksum verification
@@ -529,18 +578,18 @@ class UdataDownloader:
 
             if success:
                 if "skipped" in message:
-                    self.console.print(f"  [dim]⊘ {filename} - {message}[/dim]")
+                    self.print(f"  [dim]⊘ {filename} - {message}[/dim]")
                     skipped += 1
                 else:
-                    self.console.print(f"  [green]✓ {filename} - {message}[/green]")
+                    self.print(f"  [green]✓ {filename} - {message}[/green]")
                     downloaded += 1
             else:
-                self.console.print(f"  [red]✗ {filename} - {message}[/red]")
+                self.print(f"  [red]✗ {filename} - {message}[/red]")
                 errors += 1
 
         # Delete files that no longer exist in the dataset
         if not dry_run and dataset_dir.exists():
-            self.console.print("\n[cyan]Checking for removed files...[/cyan]")
+            self.print("\n[cyan]Checking for removed files...[/cyan]")
 
             # Find all files in the dataset directory
             existing_files = set()
@@ -552,34 +601,34 @@ class UdataDownloader:
             orphaned_files = existing_files - expected_files
 
             if orphaned_files:
-                self.console.print(f"[yellow]Found {len(orphaned_files)} file(s) no longer in dataset[/yellow]")
+                self.print(f"[yellow]Found {len(orphaned_files)} file(s) no longer in dataset[/yellow]")
                 for orphaned_file in sorted(orphaned_files):
                     try:
                         orphaned_file.unlink()
                         relative_path = orphaned_file.relative_to(self.output_dir)
-                        self.console.print(f"  [red]✗ Deleted: {relative_path}[/red]")
+                        self.print(f"  [red]✗ Deleted: {relative_path}[/red]")
                         deleted += 1
                     except Exception as e:
-                        self.console.print(f"  [red]Error deleting {orphaned_file.name}: {e}[/red]")
+                        self.print(f"  [red]Error deleting {orphaned_file.name}: {e}[/red]")
 
                 # Clean up empty directory if needed
                 if dataset_dir.exists() and not any(dataset_dir.iterdir()):
                     try:
                         dataset_dir.rmdir()
-                        self.console.print(f"  [dim]Removed empty directory: {dataset_dir.name}[/dim]")
+                        self.print(f"  [dim]Removed empty directory: {dataset_dir.name}[/dim]")
                     except:
                         pass
             else:
-                self.console.print("[dim]No orphaned files found[/dim]")
+                self.print("[dim]No orphaned files found[/dim]")
 
         # Print summary
-        self.console.print("\n[bold]Summary:[/bold]")
-        self.console.print(f"  [green]Downloaded: {downloaded}[/green]")
-        self.console.print(f"  [dim]Skipped: {skipped}[/dim]")
+        self.print("\n[bold]Summary:[/bold]")
+        self.print(f"  [green]Downloaded: {downloaded}[/green]")
+        self.print(f"  [dim]Skipped: {skipped}[/dim]")
         if deleted > 0:
-            self.console.print(f"  [red]Deleted: {deleted}[/red]")
+            self.print(f"  [red]Deleted: {deleted}[/red]")
         if errors > 0:
-            self.console.print(f"  [red]Errors: {errors}[/red]")
+            self.print(f"  [red]Errors: {errors}[/red]")
 
 
 # Backward compatibility alias
