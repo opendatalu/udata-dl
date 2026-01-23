@@ -13,6 +13,7 @@ A CLI tool to download and synchronize files from udata platforms (data.public.l
   - Only skips downloads when checksums match
 - Automatic cleanup: Deletes local files that have been removed from the platform
 - Force re-download option
+- Option to download only latest file of a dataset
 - Dry-run mode to preview downloads
 - Progress tracking with rich console output
 - No authentication required
@@ -60,6 +61,14 @@ udata-dl --dataset daily-meteorological-parameters-luxembourg-findel-airport-wmo
 
 This will download only the specified dataset. The organization is automatically determined from the dataset's metadata, and files are saved to the appropriate directory structure.
 
+Download the latest file of a dataset:
+```bash
+udata-dl --dataset operations-delta-des-vehicules-au-luxembourg --latest
+```
+
+This will download only the latest file of the specified dataset. The organization is automatically determined from the dataset's metadata, and files are saved to the appropriate directory structure.
+
+
 ### Options
 
 ```bash
@@ -75,6 +84,7 @@ udata-dl [OPTIONS] [ORGANIZATION]
 - `-u, --api-url URL`: Base URL of the udata API (default: `https://data.public.lu/api/1`)
 - `-f, --force`: Force download even if files already exist
 - `-n, --dry-run`: Show what would be downloaded without actually downloading
+- `--latest`: Download only the latest file of a given dataset
 - `-l, --log-file PATH`: Save logs to a file
 - `--version`: Show version and exit
 - `--help`: Show help message and exit

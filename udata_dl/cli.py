@@ -66,12 +66,17 @@ def build_api_url(domain: str) -> str:
     help='Show what would be downloaded without actually downloading'
 )
 @click.option(
+    '--latest',
+    is_flag=True,
+    help='Download only the most recent file based on creation date (only works with --dataset)'
+)
+@click.option(
     '--log-file', '-l',
     type=click.Path(),
     help='Save logs to a file'
 )
 @click.version_option()
-def main(organization: str, output: str, api_url: str, dataset: str, force: bool, dry_run: bool, log_file: str):
+def main(organization: str, output: str, api_url: str, dataset: str, force: bool, dry_run: bool, latest: bool, log_file: str):
     """
     Download and sync files from a udata platform for a given organization or dataset.
 
@@ -106,6 +111,10 @@ def main(organization: str, output: str, api_url: str, dataset: str, force: bool
       \b
       # Dry run to see what would be downloaded
       udata-dl societe-nationale-des-chemins-de-fer-luxembourgeois --dry-run
+
+      \b
+      # Download only the latest file from a dataset
+      udata-dl --dataset letzebuerger-online-dictionnaire-lod-linguistesch-daten --latest
     """
     console = Console()
 
@@ -116,6 +125,11 @@ def main(organization: str, output: str, api_url: str, dataset: str, force: bool
 
     if organization and dataset:
         console.print("[bold red]Error:[/bold red] ORGANIZATION and --dataset are mutually exclusive. Use either one or the other.")
+        sys.exit(1)
+
+    # Validate --latest only works with --dataset
+    if latest and not dataset:
+        console.print("[bold red]Error:[/bold red] --latest can only be used with --dataset, not with organization mode")
         sys.exit(1)
 
     # Build full API URL
@@ -142,7 +156,8 @@ def main(organization: str, output: str, api_url: str, dataset: str, force: bool
             downloader.sync_dataset(
                 dataset=dataset,
                 force=force,
-                dry_run=dry_run
+                dry_run=dry_run,
+                latest_only=latest
             )
         else:
             # Download all datasets from organization

@@ -45,7 +45,7 @@ class UdataDownloader:
 
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'udata-dl/0.4.1'
+            'User-Agent': 'udata-dl/0.4.6'
         })
 
     def __del__(self):
@@ -208,6 +208,94 @@ class UdataDownloader:
                 hasher.update(chunk)
         return hasher.hexdigest()
 
+    def is_s3_multipart_etag(self, etag: str) -> bool:
+        """
+        Check if a checksum is an S3 multipart upload ETag.
+
+        S3 multipart ETags have the format: hash-N where N is the number of parts.
+
+        Args:
+            etag: The ETag string to check
+
+        Returns:
+            True if it's an S3 multipart ETag, False otherwise
+        """
+        import re
+        # Match format like "hash-2" where hash is hex and number is the part count
+        pattern = r'^[a-f0-9]+-\d+$'
+        return bool(re.match(pattern, etag.lower()))
+
+    def calculate_s3_multipart_etag(self, filepath: Path, part_size_mb: int = 8) -> Optional[str]:
+        """
+        Calculate S3 multipart upload ETag for a file.
+
+        Args:
+            filepath: Path to file
+            part_size_mb: Part size in MB (common values: 5, 8, 16)
+
+        Returns:
+            S3 multipart ETag string (format: hash-N) or None if file doesn't exist
+        """
+        if not filepath.exists():
+            return None
+
+        part_size = part_size_mb * 1024 * 1024
+        md5_digests = []
+
+        with open(filepath, 'rb') as f:
+            while True:
+                chunk = f.read(part_size)
+                if not chunk:
+                    break
+                md5_digests.append(hashlib.md5(chunk).digest())
+
+        # If only one part, it's just a regular MD5
+        if len(md5_digests) == 1:
+            return md5_digests[0].hex()
+
+        # Concatenate all MD5 digests and hash them
+        combined = b''.join(md5_digests)
+        final_hash = hashlib.md5(combined).hexdigest()
+
+        return f"{final_hash}-{len(md5_digests)}"
+
+    def find_matching_s3_etag(self, filepath: Path, expected_etag: str) -> bool:
+        """
+        Try to match an S3 ETag by calculating with different part sizes.
+
+        Args:
+            filepath: Path to file
+            expected_etag: Expected S3 ETag from API
+
+        Returns:
+            True if a match is found with any common part size
+        """
+        # Extract expected part count from ETag if present
+        if '-' in expected_etag:
+            parts = expected_etag.split('-')
+            if len(parts) == 2 and parts[1].isdigit():
+                expected_part_count = int(parts[1])
+
+                # Calculate file size to estimate part size
+                file_size = filepath.stat().st_size
+                estimated_part_size_mb = (file_size // expected_part_count) // (1024 * 1024)
+
+                # Try estimated part size first
+                if estimated_part_size_mb > 0:
+                    calculated = self.calculate_s3_multipart_etag(filepath, estimated_part_size_mb)
+                    if calculated and calculated.lower() == expected_etag.lower():
+                        return True
+
+        # Try common S3 part sizes (in MB)
+        common_part_sizes = [5, 8, 15, 16, 20, 25, 32, 64, 100]
+
+        for part_size in common_part_sizes:
+            calculated = self.calculate_s3_multipart_etag(filepath, part_size)
+            if calculated and calculated.lower() == expected_etag.lower():
+                return True
+
+        return False
+
     def sanitize_filename(self, filename: str) -> str:
         """
         Sanitize filename for safe filesystem use.
@@ -248,14 +336,24 @@ class UdataDownloader:
             # If checksum is provided, use it for comparison
             if checksum and checksum.get("value"):
                 hash_type = checksum.get("type", "sha1")
-                local_hash = self.get_file_hash(filepath, hash_type)
                 remote_hash = checksum["value"].lower()
 
-                if local_hash and local_hash.lower() == remote_hash:
-                    return True, "skipped (checksum match)"
+                # Check if this is an S3 multipart ETag (for MD5 type)
+                if hash_type.lower() == "md5" and self.is_s3_multipart_etag(remote_hash):
+                    # Try to match S3 ETag with different part sizes
+                    if self.find_matching_s3_etag(filepath, remote_hash):
+                        return True, "skipped (S3 ETag match)"
+                    # If no match found, re-download
+                    return self._perform_download(url, filepath)
+                else:
+                    # Standard hash comparison
+                    local_hash = self.get_file_hash(filepath, hash_type)
 
-                # If hashes don't match, download
-                return self._perform_download(url, filepath)
+                    if local_hash and local_hash.lower() == remote_hash:
+                        return True, "skipped (checksum match)"
+
+                    # If hashes don't match, download
+                    return self._perform_download(url, filepath)
 
             # If no checksum, always re-download
             return self._perform_download(url, filepath)
@@ -473,7 +571,8 @@ class UdataDownloader:
         self,
         dataset: str,
         force: bool = False,
-        dry_run: bool = False
+        dry_run: bool = False,
+        latest_only: bool = False
     ):
         """
         Sync files from a single dataset.
@@ -482,6 +581,7 @@ class UdataDownloader:
             dataset: Dataset identifier (ID or slug)
             force: Force download even if files exist
             dry_run: Only show what would be downloaded
+            latest_only: Download only the file with the most recent creation date
         """
         # Fetch the dataset
         dataset_data = self.get_dataset(dataset)
@@ -494,6 +594,23 @@ class UdataDownloader:
 
         # exclude APIs
         resources = [r for r in dataset_data.get("resources", []) if r.get("type") != "api"]
+
+        # If latest_only is set, keep only the resource with the most recent creation_date
+        if latest_only and resources:
+            # Sort resources by creation_date (most recent first)
+            # Check for both 'creation_date' and 'created_at' fields
+            def get_creation_date(resource):
+                return resource.get("creation_date") or resource.get("created_at") or ""
+
+            resources_with_date = [r for r in resources if get_creation_date(r)]
+            if resources_with_date:
+                # Select the resource with the most recent creation date
+                resources = [max(resources_with_date, key=get_creation_date)]
+                self.print("[cyan]Latest-only mode: downloading file with most recent creation date[/cyan]")
+            else:
+                # Fallback to first resource if no creation dates available
+                resources = [resources[0]]
+                self.print("[yellow]Latest-only mode: downloading first file (no creation dates available)[/yellow]")
 
         # Extract organization from dataset
         org_data = dataset_data.get("organization")
