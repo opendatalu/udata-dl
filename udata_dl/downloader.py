@@ -45,7 +45,7 @@ class UdataDownloader:
 
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'udata-dl/0.4.6'
+            'User-Agent': 'udata-dl/0.4.7'
         })
 
     def __del__(self):
@@ -98,7 +98,7 @@ class UdataDownloader:
         try:
             response = self.session.get(
                 f"{self.api_base_url}/organizations/{organization}/",
-                timeout=10
+                timeout=60
             )
             response.raise_for_status()
             return response.json()
@@ -119,7 +119,7 @@ class UdataDownloader:
         try:
             response = self.session.get(
                 f"{self.api_base_url}/datasets/{dataset}/",
-                timeout=10
+                timeout=60
             )
             response.raise_for_status()
             return response.json()
@@ -373,7 +373,7 @@ class UdataDownloader:
             Tuple of (success: bool, message: str)
         """
         try:
-            response = self.session.get(url, stream=True, timeout=30)
+            response = self.session.get(url, stream=True, timeout=60)
             response.raise_for_status()
 
             total_size = int(response.headers.get('content-length', 0))
